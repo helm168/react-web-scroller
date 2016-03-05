@@ -1,8 +1,8 @@
 {
-  "name": "scroller",
+  "name": "react-web-scroller",
   "version": "0.0.1",
   "description": "react scroller",
-  "main": "index.js",
+  "main": "dist/scroller.js",
   "scripts": {
     "test": "./node_modules/.bin/nodemon ./demos"
   },
