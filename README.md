@@ -1,5 +1,4 @@
-# README #
-
+# react-web-resize
 An react version of scroller inspired by iscroller.
 
 ### Prerequirement ###
