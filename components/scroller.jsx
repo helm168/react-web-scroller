@@ -519,6 +519,8 @@ class Scroller extends Component {
     }
 
     _refreshPosition() {
+        this._containerSize = null;
+        this._contentSize = null;
         let containerSize = this.getContainerSize();
         let contentSize = this.getContentSize();
         this._maxPosition = {
@@ -590,8 +592,6 @@ class Scroller extends Component {
     }
     
     _doResize() {
-        this._containerSize = null;
-        this._contentSize = null;
         this._refreshPosition();
         this._backToBoundary();
         this._indicatorsResize();
