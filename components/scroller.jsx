@@ -440,6 +440,7 @@ class Scroller extends Component {
                 this._wheelTimer = null;
             }
             if (!this._triggerWheelStart) {
+                this._translate.stopAnimation();
                 this.trigger('scrollStart', this);
                 this._triggerWheelStart = true;
 

@@ -1,6 +1,6 @@
 {
   "name": "react-web-scroller",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "react scroller",
   "main": "dist/scroller.js",
   "scripts": {
