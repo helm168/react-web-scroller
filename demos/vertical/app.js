@@ -14,7 +14,12 @@ class App extends React.Component {
         return (
             <div>
                 <div style={styles.header}>Scroller</div>
-                <Scroller style={styles.content} >{ul}</Scroller>
+                <Scroller
+                    style={styles.content}
+                    useCssTransition={true}
+                    >
+                    {ul}
+                </Scroller>
             </div>
         );
     }

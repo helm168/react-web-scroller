@@ -3,7 +3,7 @@ import EventEmitter from 'events';
 let _elementStyle = document.createElement('div').style;
 
 let _vendor = (function() {
-    var vendors = ['t', 'webkitT', 'MozT', 'msT', 'OT'],
+    let vendors = ['t', 'webkitT', 'MozT', 'msT', 'OT'],
         transform,
         i = 0,
         l = vendors.length;
@@ -30,12 +30,35 @@ let vendorStyle = {
     transformOrigin: _prefixStyle('transformOrigin')
 };
 
+window.requestAnimationFrame = (function() {
+    return window.requestAnimationFrame ||
+        window.webkitRequestAnimationFrame ||
+        window.mozRequestAnimationFrame ||
+        window.oRequestAnimationFrame ||
+        window.msRequestAnimationFrame ||
+        function(fn) {
+            return setTimeout(fn, 1000 / 60);
+        };
+})();
+
+window.cancelAnimationFrame = (function() {
+    return window.cancelAnimationFrame ||
+        window.webKitCancelAnimationFrame ||
+        window.mozCancelAnimationFrame ||
+        window.oCancelAnimationFrame ||
+        window.msCancelAnimationFrame ||
+        function(rafId) {
+            clearTimeout(rafId);
+        }
+})();
+
 class Translate extends EventEmitter {
 
     constructor(el) {
         super();
         this._el = el;
         this.transitionEnd = this.transitionEnd.bind(this);
+        this._doAnimationFrame = this._doAnimationFrame.bind(this);
     }
 
     _doTranslate(x = 0, y = 0) {
@@ -46,9 +69,9 @@ class Translate extends EventEmitter {
     }
 
     _getElPosition(el) {
-        var transformStyle = window.getComputedStyle(el)['transform'];
-        var matrix = transformStyle.split(')')[0].split(',');
-        var translateX, translateY;
+        let transformStyle = window.getComputedStyle(el)[vendorStyle.transform];
+        let matrix = transformStyle.split(')')[0].split(',');
+        let translateX, translateY;
         translateX = Number(matrix[4]);
         translateY = Number(matrix[5]);
         return {
@@ -69,46 +92,112 @@ class Translate extends EventEmitter {
     }
 
     translate(x, y) {
-        this._doTranslate(x, y);
+        this.x = x || 0;
+        this.y = y || 0;
+        this._doTranslate(this.x, this.y);
+    }
+
+    easingEnd() {
+        this._inAnimate = false;
+        this._activeEasingX = this._activeEasingY = null;
+        this.emit('easingEnd', {x: this.x, y: this.y});
     }
 
     translateAnimation(animation) {
-        let easingX = animation.easingX;
-        let easingY = animation.easingY;
-        let cssTransition = animation.cssTransition;
+        let easingX = this._activeEasingX = animation.easingX;
+        let easingY = this._activeEasingY = animation.easingY;
+
+        let cssTransition = this._cssTransition = animation.cssTransition;
         let el = this._el;
 
         if (el) {
-            let x, y, styleX, styleY, durationX, durationY;
-            if (easingX) {
-                x = easingX.getEndValue();
-                styleX = easingX.getOptions('style');
-                durationX = easingX.getDuration();
-            } else {
-                x = 0;
-                durationX = 0;
-            }
-
-            if (easingY) {
-                y = easingY.getEndValue();
-                styleY = easingY.getOptions('style');
-                durationY = easingY.getDuration();
-            } else {
-                y = 0;
-                durationY = 0;
-            }
-
+            this._inAnimate = true;
             if (cssTransition) {
-                let style = styleX || styleY;
-                let duration = Math.max(durationX, durationY);
-                el.style[vendorStyle.transitionTimingFunction] = style;
-                el.style[vendorStyle.transitionDuration] = `${duration}ms`;
-                el.addEventListener('transitionend', this.transitionEnd, false);
-                this._inAnimate = true;
+               this._doCssAnimation(animation);
             } else {
-                // todo
+                cancelAnimationFrame(this.animationFrameId);
+                this._translateArr = [];
+                this._type = 'animation';
+                this.animationFrameId = requestAnimationFrame(this._doAnimationFrame);
+
             }
+        }
+    }
+
+    _doCssAnimation() {
+        let easingX, easingY;
+        let x, y, styleX, styleY, durationX, durationY;
+
+        easingX = this._activeEasingX;
+        easingY = this._activeEasingY;
+        if (easingX) {
+            x = easingX.getEndValue();
+            styleX = easingX.getOptions('style');
+            durationX = easingX.getDuration();
+        } else {
+            x = 0;
+            durationX = 0;
+        }
+
+        if (easingY) {
+            y = easingY.getEndValue();
+            styleY = easingY.getOptions('style');
+            durationY = easingY.getDuration();
+        } else {
+            y = 0;
+            durationY = 0;
+        }
+
+        let style = styleX || styleY;
+        let duration = Math.max(durationX, durationY);
+        let el = this._el;
+        el.style[vendorStyle.transitionTimingFunction] = style;
+        el.style[vendorStyle.transitionDuration] = duration + 'ms';
+        el.addEventListener('transitionend', this.transitionEnd, false);
+        this._doTranslate(x, y);
+    }
+
+    _doAnimationFrame() {
+        let easingX = this._activeEasingX,
+            easingY = this._activeEasingY,
+            now = Date.now(),
+            x, y;
+
+        if (!this._inAnimate) {
+            return;
+        }
+
+        this.animationFrameId = requestAnimationFrame(this._doAnimationFrame);
+
+        if (!easingX && !easingY) {
+            this.stopAnimation();
+            return;
+        }
+        if (easingX) {
+            this.x = x = Math.round(easingX.getValue());
+
+            if (easingX.isEnded()) {
+                this._activeEasingX = null;
+            }
+        } else {
+            x = this.x || 0;
+        }
+        if (easingY) {
+            this.y = y = Math.round(easingY.getValue());
+
+            if (easingY.isEnded()) {
+                this._activeEasingY = null;
+            }
+        } else {
+            y = this.y || 0;
+        }
+        if (this._lastX !== x || this._lastY !== y) {
             this._doTranslate(x, y);
+
+            this._lastX = x;
+            this._lastY = y;
+
+            this.emit('easing', {x: x, y: y});
         }
     }
 
@@ -116,10 +205,16 @@ class Translate extends EventEmitter {
         if (this._inAnimate) {
             this._inAnimate = false;
 
-            let el = this._el;
-            let currentPosition = this._getElPosition(el);
-            this._doTranslate(currentPosition.x, currentPosition.y);
-            this.transitionEnd();
+            if (this._cssTransition) {
+                let el = this._el;
+                let currentPosition = this._getElPosition(el);
+                this._doTranslate(currentPosition.x, currentPosition.y);
+                this.transitionEnd();
+            } else {
+                cancelAnimationFrame(this.animationFrameId);
+                this.easingEnd();
+            }
+
         }
     }
 }

@@ -1,23 +1,12 @@
 import EventEmitter from 'events';
-
-function getElPosition(el) {
-    var transformStyle = window.getComputedStyle(el)['transform'];
-    var matrix = transformStyle.split(')')[0].split(',');
-    var translateX, translateY;
-    translateX = Number(matrix[4]);
-    translateY = Number(matrix[5]);
-    return {
-        x: translateX,
-        y: translateY
-    };
-}
+import objectAssign from 'object-assign';
 
 function Ease(options) {
     this.options = options || {};
 }
 
 Ease.prototype.setOptions = function(options) {
-    Object.assign(this.options, options);
+    objectAssign(this.options, options);
 }
 
 Ease.prototype.getOptions = function(optionKey) {
@@ -33,13 +22,23 @@ Ease.prototype.reset = empty;
 function empty() {}
 
 function Quadratic(options) {
-    options = Object.assign({
+    options = objectAssign({
         style: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-        fn: function(k) {
-            return k * (2 - k);
-        }
+        minVelocity: 1,
+        bounce: true,
     }, options);
+
     Ease.call(this, options);
+}
+
+Quadratic.prototype.setOptions = function(options) {
+    objectAssign(this.options, options);
+
+    this.getMomentum().setOptions({
+        startValue: this.options.startValue,
+        startTime: this.options.startTime,
+        startVelocity: this.options.startVelocity,
+    });
 }
 
 Quadratic.prototype.setEndValue = function(endValue) {
@@ -63,17 +62,20 @@ Quadratic.prototype.getDuration = function() {
 Quadratic.prototype.reset = function() {
     this._duration = undefined;
     this._endValue = undefined;
+    this._isEnded = false;
+    this._isOutOfBound = false;
+    this._isBouncingBack = false;
 }
 
 Quadratic.prototype._calculate = function() {
-    var momentum = this.momentum(this.options.position, this.options.flickStartPosition,
+    let momentum = this.momentum(this.options.position, this.options.flickStartPosition,
             this.options.flickTime, this.options.maxPosition, this.options.wrapperSize);
     this._endValue = momentum.destination;
     this._duration = momentum.duration;
 }
 
 Quadratic.prototype.momentum = function(current, start, time, lowerMargin, wrapperSize, deceleration) {
-    var distance = current - start,
+    let distance = current - start,
         speed = Math.abs(distance) / time,
         destination,
         duration;
@@ -99,20 +101,130 @@ Quadratic.prototype.momentum = function(current, start, time, lowerMargin, wrapp
     };
 };
 
+Quadratic.prototype.getBounce = function(options) {
+    if (!this._bounce) {
+        this._bounce = new Bounce(options);
+    }
+    return this._bounce;
+};
+
+Quadratic.prototype.getMomentum = function(options) {
+    if (!this._momentum) {
+        this._momentum = new Momentum(options);
+    }
+    return this._momentum;
+};
+
+Quadratic.prototype.getValue = function() {
+    let momentum = this.getMomentum(),
+        bounce = this.getBounce(),
+        options = this.options,
+        startVelocity = options.startVelocity,
+        direction = startVelocity > 0 ? 1 : -1,
+        minValue = options.minMomentumValue,
+        maxValue = options.maxMomentumValue,
+        bounceValue = (direction === 1) ? maxValue : minValue,
+        lastValue = this._lastValue,
+        value, velocity;
+
+    if (startVelocity === 0 || this._isEnded) {
+        this._isEnded = true;
+        return options.startValue;
+    }
+
+    if (!this._isOutOfBound) {
+        value = momentum.getValue();
+        velocity = momentum.getVelocity();
+        if (Math.abs(velocity) < options.minVelocity) {
+            this._isEnded = true;
+        }
+
+        if (value >= minValue && value <= maxValue) {
+            return value;
+        } else {
+            if (!this.options.bounce) {
+                this._isEnded = true;
+                if (value < minValue) return minValue;
+                if (value > maxValue) return maxValue;
+            }
+        }
+
+        this._isOutOfBound = true;
+
+        bounce.setOptions({
+            startTime: Date.now(),
+            startVelocity: velocity,
+            startValue: bounceValue,
+        });
+    }
+
+    value = bounce.getValue();
+
+    if (!this._isEnded) {
+        if (!this._isBouncingBack) {
+            if (lastValue !== null) {
+                if ((direction === 1 && value < lastValue) || (direction === -1 && value > lastValue)) {
+                    this._isBouncingBack = true;
+                }
+            }
+        } else {
+            if (Math.round(value) === bounceValue) {
+                this._isEnded = true;
+            }
+        }
+    }
+
+    this._lastValue = value;
+
+    return value;
+};
+
+Quadratic.prototype.isEnded = function() {
+    return this._isEnded;
+}
+
 Object.setPrototypeOf(Quadratic.prototype, Ease.prototype);
 
 function Circular(options) {
-    options = Object.assign({
+    options = objectAssign({
         style: 'cubic-bezier(0.1, 0.57, 0.1, 1)', // Not properly "circular" but this looks better, it should be (0.075, 0.82, 0.165, 1)
-        fn: function(k) {
-            return Math.sqrt(1 - (--k * k));
-        }
+        exponent: 4,
+        duration: 400,
     }, options);
     Ease.call(this, options);
 }
 
+Circular.prototype.getValue = function() {
+    let options = this.options,
+        deltaTime = Date.now() - options.startTime,
+        duration = options.duration,
+        startValue = options.startValue,
+        endValue = options.endValue,
+        distance = this._distance,
+        theta = deltaTime / duration,
+        thetaC = 1 - theta,
+        thetaEnd = 1 - Math.pow(thetaC, options.exponent),
+        currentValue = startValue + (thetaEnd * distance);
+
+    if (deltaTime >= duration) {
+        this._isEnded = true;
+        return endValue;
+    }
+
+    return currentValue;
+}
+
+Circular.prototype.reset = function() {
+    this._isEnded = false;
+}
+
+Circular.prototype.setOptions = function(options) {
+    objectAssign(this.options, options);
+    this._distance = this.options.endValue - this.options.startValue;
+}
+
 Circular.prototype.setEndValue = function(endValue) {
-    this.options.endValue = endValue;
+    this.setOptions('endValue', endValue);
 }
 
 Circular.prototype.getEndValue = function() {
@@ -123,55 +235,61 @@ Circular.prototype.getDuration = function() {
     return this.getOptions('duration');
 }
 
+Circular.prototype.isEnded = function() {
+    return this._isEnded;
+}
+
 Object.setPrototypeOf(Circular.prototype, Ease.prototype);
 
 function Bounce(options) {
-    options = Object.assign({
-        style: '',
-        fn: function(k) {
-            if ((k /= 1) < (1 / 2.75)) {
-                return 7.5625 * k * k;
-            } else if (k < (2 / 2.75)) {
-                return 7.5625 * (k -= (1.5 / 2.75)) * k + 0.75;
-            } else if (k < (2.5 / 2.75)) {
-                return 7.5625 * (k -= (2.25 / 2.75)) * k + 0.9375;
-            } else {
-                return 7.5625 * (k -= (2.625 / 2.75)) * k + 0.984375;
-            }
-        }
+    options = objectAssign({
+        springTension: 0.3,
+        acceleration: 30,
+        startVelocity: 0
     }, options);
     Ease.call(this, options);
 }
 
-Bounce.prototype.move = function() {
-};
+Bounce.prototype.getValue = function() {
+    let options = this.options,
+        deltaTime = Date.now() - options.startTime,
+        theta = (deltaTime / options.acceleration),
+        powTime = theta * Math.pow(Math.E, -options.springTension * theta);
+
+    return options.startValue + (options.startVelocity * powTime);
+}
 
 Object.setPrototypeOf(Bounce.prototype, Ease.prototype);
 
-let eases = {
-    back: {
-        style: 'cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-        fn: function(k) {
-            var b = 4;
-            return (k = k - 1) * k * ((b + 1) * k + b) + 1;
-        }
-    },
-    elastic: {
-        style: '',
-        fn: function(k) {
-            var f = 0.22,
-                e = 0.4;
+function Momentum(options) {
+    options = objectAssign({
+        friction: 0.5,
+        acceleration: 50,
+        startVelocity: 0
+    }, options);
+    Ease.call(this, options);
+}
 
-            if (k === 0) {
-                return 0;
-            }
-            if (k == 1) {
-                return 1;
-            }
+Momentum.prototype.setOptions = function(options) {
+    objectAssign(this.options, options);
 
-            return (e * Math.pow(2, -10 * k) * Math.sin((k - f / 4) * (2 * Math.PI) / f) + 1);
-        }
-    }
-};
+    this._velocity = this.options.startVelocity * this.options.acceleration;
+    this._theta = Math.log(1 - (this.options.friction / 10));
+    this._alpha = this._theta / this.options.acceleration;
+}
 
-export default {Quadratic, Circular, Bounce};
+Momentum.prototype.getValue = function() {
+    return this.options.startValue - this._velocity * (1 - this.getFrictionFactor()) / this._theta;
+}
+
+Momentum.prototype.getFrictionFactor = function() {
+    let deltaTime = Date.now() - this.options.startTime;
+
+    return Math.exp(deltaTime * this._alpha);
+}
+
+Momentum.prototype.getVelocity = function() {
+    return this.getFrictionFactor() * this._velocity;
+}
+
+export default {Quadratic, Circular};

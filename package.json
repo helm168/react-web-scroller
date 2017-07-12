@@ -1,6 +1,6 @@
 {
   "name": "react-web-scroller",
-  "version": "0.0.6",
+  "version": "1.2.0",
   "description": "react scroller",
   "main": "dist/scroller.js",
   "scripts": {
@@ -45,6 +45,7 @@
   },
   "dependencies": {
     "debounce": "^1.0.0",
+    "object-assign": "^4.0.1",
     "react-web-resize": ">0.0.4"
   }
 }

@@ -12,6 +12,7 @@ class App extends React.Component {
                 <div style={styles.header}>Scroller</div>
                 <Scroller style={styles.vScroller}
                     direction='v'
+                    useCssTransition={false}
                     lock={true} >
                     <div style={styles.vWrapper}>
 
@@ -19,6 +20,7 @@ class App extends React.Component {
 
                 <Scroller style={styles.hScroller}
                     lock={true}
+                    useCssTransition={false}
                     direction='h'
                     >
                     <div style={styles.hWrapper}>

@@ -2,6 +2,7 @@ import React      from 'react';
 import ReactDOM   from 'react-dom';
 import Translate from './translate';
 import debounce from 'debounce';
+import objectAssign from 'object-assign';
 
 let {
     Component,
@@ -71,6 +72,7 @@ class Indicator extends Component {
 
         this._scroller = props.scroller;
         this._scroller.on('scrollStart', this.onScrollStart.bind(this));
+        this._scroller.on('scroll', this.onScroll.bind(this));
         this._scroller.on('scrollEnd', this.onScrollEnd.bind(this));
         this.resize = debounce(this._doResize.bind(this), 100);
     }
@@ -86,22 +88,26 @@ class Indicator extends Component {
         this.resize();
     }
 
+    componentWillUnmount() {
+        clearLocked(this);
+    }
+
     _doResize() {
         this._barLength = null;
-        let scroller = this._scroller;
-        let containerSize = scroller.getContainerSize();
-        let contentSize = scroller.getContentSize();
-        let direction = this.props.direction;
-        let ratio, indicatorLength;
-        let indicatorEl = this._getIndicatorEl();
+        var scroller = this._scroller;
+        var containerSize = scroller.getContainerSize();
+        var contentSize = scroller.getContentSize();
+        var direction = this.props.direction;
+        var ratio, indicatorLength;
+        var indicatorEl = this._getIndicatorEl();
         if (direction === DIRECTION.V) {
-            ratio = this._ratio = containerSize.y / contentSize.y;
-            indicatorLength = this._indicatorLength = containerSize.y * ratio;
-            indicatorEl.style.height = `${indicatorLength}px`;
+            ratio = this._ratio = (containerSize.y / contentSize.y).toFixed(2);
+            indicatorLength = this._indicatorLength = Math.round(containerSize.y * ratio);
+            indicatorEl.style.height = indicatorLength + 'px';
         } else {
             ratio = this._ratio = containerSize.x / contentSize.x;
-            indicatorLength = this._indicatorLength = containerSize.x * ratio;
-            indicatorEl.style.width = `${indicatorLength}px`;
+            indicatorLength = this._indicatorLength = Math.round(containerSize.x * ratio);
+            indicatorEl.style.width = indicatorLength + 'px';
         }
     }
 
@@ -134,12 +140,13 @@ class Indicator extends Component {
     }
 
     _directionScrollTo(to) {
-        let indicatorEl = this._getIndicatorEl();
-        let moveArgs = this._getMoveArgs(to);
-        let cssStyle = directionToStyle[this.props.direction];
-        if (moveArgs[cssStyle]) {
-            indicatorEl.style[cssStyle] = moveArgs[cssStyle];
-        } else if (moveArgs.translate) {
+        var indicatorEl = this._getIndicatorEl();
+        var moveArgs = this._getMoveArgs(to);
+        var cssStyle = directionToStyle[this.props.direction];
+        if (!isNaN(moveArgs[cssStyle])) {
+            indicatorEl.style[cssStyle] = moveArgs[cssStyle] + 'px';
+        }
+        if (!isNaN(moveArgs.translate)) {
             if (this.props.direction === DIRECTION.V) {
                 this._translate.translate(0, moveArgs.translate);
             } else {
@@ -149,19 +156,20 @@ class Indicator extends Component {
     }
 
     _getMoveArgs(to) {
-        let translate = to * this._ratio;
-        let cssStyle = directionToStyle[this.props.direction];
-        let barLength = this._getBarLengthByDirection(this.props.direction);
+        var translate = Math.round(to * this._ratio);
+        var cssStyle = directionToStyle[this.props.direction];
+        var barLength = this._getBarLengthByDirection(this.props.direction);
         var moveArgs = {};
         if (translate < 0) {
             if (this.props.shrinkIndicator) {
-                moveArgs[cssStyle] = this._indicatorLength + translate + 'px';
+                moveArgs[cssStyle] = this._indicatorLength + translate;
             } else {
                 moveArgs.translate = 0;
             }
         } else if (translate > barLength - this._indicatorLength) {
             if (this.props.shrinkIndicator) {
-                moveArgs[cssStyle] = translate - barLength + 'px';
+                moveArgs[cssStyle] = barLength - translate;
+                moveArgs.translate = translate;
             } else {
                 moveArgs.translate = barLength - this._indicatorLength;
             }
@@ -188,12 +196,12 @@ class Indicator extends Component {
     }
 
     _directionAnimationTo(axis, animation) {
-        let easingKey = 'easing' + axis;
-        let easing = animation[easingKey]; 
+        var easingKey = 'easing' + axis;
+        var easing = animation[easingKey]; 
         if (easing) {
-            let endValue = easing.getEndValue();
-            let moveArgs = this._getMoveArgs(-endValue);
-            if (moveArgs.translate !== undefined) {
+            var endValue = easing.getEndValue();
+            var moveArgs = this._getMoveArgs(-endValue);
+            if (!isNaN(moveArgs.translate)) {
                 easing.setEndValue(moveArgs.translate);
                 this._translate.translateAnimation(animation);
             }
@@ -207,6 +215,27 @@ class Indicator extends Component {
         let indicatorEl = this._getIndicatorEl();
         this._translate.stopAnimation();
         indicatorEl.style.visibility = 'visible';
+    }
+
+    onScroll(scroller, position) {
+        var moveArgs = null;
+        if (this.props.direction === DIRECTION.V) {
+            moveArgs = this._getMoveArgs(position.y);
+        } else {
+            moveArgs = this._getMoveArgs(position.x);
+        }
+        var cssStyle = directionToStyle[this.props.direction];
+        var indicatorEl = this._getIndicatorEl();
+        if (!isNaN(moveArgs[cssStyle])) {
+            indicatorEl.style[cssStyle] = moveArgs[cssStyle] + 'px';
+        }
+        if (!isNaN(moveArgs.translate)) {
+            if (this.props.direction === DIRECTION.V) {
+                this._translate.translate(0, moveArgs.translate);
+            } else {
+                this._translate.translate(moveArgs.translate, 0);
+            }
+        }
     }
 
     onScrollEnd() {
@@ -226,7 +255,7 @@ class Indicator extends Component {
             barStyle = styles.hBar;
             indicatorStyle = styles.hIndicator;
         }
-        indicatorStyle = Object.assign({}, indicatorStyle, this.props.indicatorStyle);
+        indicatorStyle = objectAssign({}, indicatorStyle, this.props.indicatorStyle);
         return (
             <div style={barStyle}>
                 <div ref='indicator' style={indicatorStyle}></div>

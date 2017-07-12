@@ -29,6 +29,7 @@ class App extends React.Component {
                 <div style={styles.header}>Scroller</div>
                 <Scroller style={styles.content}
                     indicatorStyle={{background: 'white'}}
+                    useCssTransition={false}
                     direction='h'>
                     {ul}
                 </Scroller>
