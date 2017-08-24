@@ -65,9 +65,6 @@ class Scroller extends Component {
     this._doRafMove = this._doRafMove.bind(this);
 
     this._listener = {};
-
-    // debounce resize
-    this._resize = debounce(this._doResize.bind(this), 100);
   }
 
   static defaultProps = {
