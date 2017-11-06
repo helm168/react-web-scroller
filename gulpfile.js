@@ -33,10 +33,6 @@ function compileJs(entry, watch) {
     rebundle();
 }
 
-gulp.task('watchJs', function() {
-    return compileJs(true);
-});
-
 gulp.task('test', function() {
     var demoPath = './demos';
     var folderPath, demoEntryPath, entries = [];
@@ -57,4 +53,4 @@ gulp.task('test', function() {
     });
 })
 
-gulp.task('default', ['watchJs']);
+gulp.task('default', ['test']);
