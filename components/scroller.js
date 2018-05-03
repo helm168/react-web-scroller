@@ -1,58 +1,77 @@
-import React      from 'react';
-import ReactDOM   from 'react-dom';
-import Resize     from 'react-web-resize';
-import { Circular, Quadratic }   from './ease';
-import Translate from './translate';
-import Indicator from './indicator';
-import { DIRECTION } from './indicator';
+import React, { Component } from 'react';
 import debounce from 'debounce';
 import objectAssign from 'object-assign';
+import Resize from 'react-web-resize';
+import { Circular, Quadratic } from './ease';
+import Translate from './translate';
+import Indicator, { DIRECTION } from './indicator';
 
-let {
-  Component,
-} = React;
+const styles = {
+  container: {
+    overflow: 'hidden',
+    position: 'relative'
+  }
+};
 
 // todo
 // 1. stop wheel
 // 3. props 判断是否update
-// 4. 事件节流
 
 class Scroller extends Component {
+  static defaultProps = {
+    distanceToMove: 8,
+    outOfBoundRestrictFactor: 0.5,
+    // n: short for none
+    // b: short for both
+    // v: short for vertical
+    // h: short for horizontal
+    direction: 'v',
+    showIndicator: true,
+    lock: false,
+    bounceTime: 400,
+    flickResetTime: 300,
+    momentumVelocity: 0.3,
+    useCssTransition: true,
+    preventDefault: true,
+    bounce: true,
+    rtl: false
+  }
+
   constructor(props) {
     super(props);
     this._startPosition = {
       x: 0,
-      y: 0,
+      y: 0
     };
 
     this._dragStartPosition = {
       x: 0,
-      y: 0,
+      y: 0
     };
 
     this._flickStartPosition = {
       x: 0,
-      y: 0,
+      y: 0
     };
 
     this._flickStartTime = {
       x: 0,
-      y:0,
+      y: 0
     };
 
     this._position = {
       x: 0,
-      y: 0,
+      y: 0
     };
 
     this._movePosition = {
       x: 0,
-      y: 0,
+      y: 0
     };
 
     this._axisEnabledFlag = {
       x: true,
-      y: true,
+      y: true
     };
 
     this._inDragging = false;
@@ -67,23 +86,23 @@ class Scroller extends Component {
     this._listener = {};
   }
 
-  static defaultProps = {
-    distanceToMove: 8,
-    outOfBoundRestrictFactor: 0.5,
-    //n: short for none
-    //b: short for both
-    //v: short for vertical
-    //h: short for horizontal
-    direction: 'v',
-    showIndicator: true,
-    lock: false,
-    bounceTime: 400,
-    flickResetTime: 300,
-    momentumVelocity: 0.3,
-    useCssTransition: true,
-    preventDefault: true,
-    bounce: true,
-    rtl: false,
+  componentDidMount() {
+    this._contentEl = this._wrapperEl.firstElementChild;
+    this._translate = new Translate(this._contentEl);
+    this._translate.on('easing', this._onEasing.bind(this));
+    this._translate.on('easingEnd', this._onEasingEnd.bind(this));
+    this._refreshPosition();
+    this._refreshAxisEnabled();
+
+    // 性能考虑，先给元素添加transform属性，把渲染层先拆分出来，这样第一次滚动效果更好
+    // 另外，如果暴露position属性给调用组件使用，这里可以作为position的初始化
+    // eg: this.scrollTo(this.props.position.x, this.props.position.y);
+    this.scrollTo(0, 0);
+  }
+
+  componentDidUpdate() {
+    this._refreshPosition();
+    this._refreshAxisEnabled();
   }
 
   // easy pubsub
@@ -101,21 +120,21 @@ class Scroller extends Component {
   }
 
   trigger(type, ...args) {
-    let listeners = this._listener[type];
+    const listeners = this._listener[type];
     if (listeners) {
       listeners.forEach(each => each(...args));
     }
   }
 
   _getPosition(evt) {
-    let position = {
+    const position = {
       x: 0,
-      y: 0,
+      y: 0
     };
 
-    let touches = evt.changedTouches;
-    if(touches) {
-      let touch = touches[0];
+    const touches = evt.changedTouches;
+    if (touches) {
+      const touch = touches[0];
       position.x = touch.pageX;
       position.y = touch.pageY;
     } else {
@@ -138,62 +157,62 @@ class Scroller extends Component {
     this._stopAnimation();
 
     this._inDragging = true;
-    let elPosition = this._getPosition(evt);
+    const elPosition = this._getPosition(evt);
     this._dragStartPosition = elPosition;
     this._flickStartPosition = {
       x: this._position.x,
-      y: this._position.y,
+      y: this._position.y
     };
-    let now = Date.now();
+    const now = Date.now();
     this._flickStartTime = {
       x: now,
-      y: now,
+      y: now
     };
     this._startPosition = {
       x: this._position.x,
-      y: this._position.y,
+      y: this._position.y
     };
 
-    //禁止多指滑动
+    // 禁止多指滑动
     if (evt.touches && evt.touches.length !== 1) {
-      return this._onTouchEnd(evt);
+      this._onTouchEnd(evt);
+      return;
     }
 
     this._triggerStart = false;
   }
 
   _onAxisMove(axis, delta, movePosition) {
-    if(!this._axisEnabledFlag[axis])
-      return;
+    if (!this._axisEnabledFlag[axis]) { return; }
 
-    let startPosition = this._startPosition[axis],
-      maxPosition = this._maxPosition[axis],
-      minPosition = this._minPosition[axis],
-      flickStartPosition = this._flickStartPosition[axis],
-      flickStartTime = this._flickStartTime[axis],
-      currentPosition, restrict;
+    const startPosition = this._startPosition[axis];
+    const maxPosition = this._maxPosition[axis];
+    const minPosition = this._minPosition[axis];
+    const flickStartTime = this._flickStartTime[axis];
+    let currentPosition;
 
-    restrict = this.props.outOfBoundRestrictFactor;
+    const restrict = this.props.outOfBoundRestrictFactor;
+
+    const { bounce, flickResetTime } = this.props;
 
     currentPosition = startPosition - delta;
-    if(currentPosition > maxPosition) {
-      if (this.props.bounce) {
+    if (currentPosition > maxPosition) {
+      if (bounce) {
         currentPosition = (currentPosition - maxPosition) * restrict + maxPosition;
       } else {
         currentPosition = maxPosition;
       }
-    } else if(currentPosition < minPosition) {
-      if (this.props.bounce) {
+    } else if (currentPosition < minPosition) {
+      if (bounce) {
         currentPosition = (currentPosition - minPosition) * restrict + minPosition;
       } else {
         currentPosition = minPosition;
       }
     }
 
-    let now = Date.now(),
-      flickResetTime = this.props.flickResetTime;
+    const now = Date.now();
 
-    if(now - flickStartTime >= flickResetTime) {
+    if (now - flickStartTime >= flickResetTime) {
       this._flickStartPosition[axis] = this._position[axis];
       this._flickStartTime[axis] = now;
     }
@@ -202,21 +221,20 @@ class Scroller extends Component {
   }
 
   _onTouchMove(evt) {
-    if(!this._inDragging) {return;}
-    let elPosition = this._getPosition(evt),
-      dragStartPosition = this._dragStartPosition,
-      startPosition = this._startPosition,
-      absDistanceX, absDistanceY, distanceToMove,
-      deltaX, deltaY;
+    if (!this._inDragging) return;
+    const elPosition = this._getPosition(evt);
+    const dragStartPosition = this._dragStartPosition;
+    let absDistanceX;
+    let absDistanceY;
 
-    deltaX = elPosition.x - dragStartPosition.x;
-    deltaY = elPosition.y - dragStartPosition.y;
+    const deltaX = elPosition.x - dragStartPosition.x;
+    const deltaY = elPosition.y - dragStartPosition.y;
 
     if (!this._triggerStart) {
       absDistanceX = Math.abs(deltaX);
       absDistanceY = Math.abs(deltaY);
-      distanceToMove = this.props.distanceToMove;
-      //移动距离超过一定距离才继续执行
+      const { distanceToMove } = this.props;
+      // 移动距离超过一定距离才继续执行
       if (absDistanceX < distanceToMove && absDistanceY < distanceToMove) {
         return;
       }
@@ -250,16 +268,20 @@ class Scroller extends Component {
 
     this._movePosition.x = 0;
     this._movePosition.y = 0;
-    this._moveX && this._onAxisMove('x', deltaX, this._movePosition);
-    this._moveY && this._onAxisMove('y', deltaY, this._movePosition);
+    if (this._moveX) {
+      this._onAxisMove('x', deltaX, this._movePosition);
+    }
+    if (this._moveY) {
+      this._onAxisMove('y', deltaY, this._movePosition);
+    }
 
-    if ((this._moveX && this._axisEnabledFlag['x']) || (this._moveY && this._axisEnabledFlag['y'])) {
+    if ((this._moveX && this._axisEnabledFlag.x) || (this._moveY && this._axisEnabledFlag.y)) {
       this._doMove();
     }
   }
 
   _onTouchEnd(evt) {
-    if (!this._inDragging) {return;}
+    if (!this._inDragging) { return; }
     this._onTouchMove(evt);
     this._inDragging = false;
 
@@ -271,14 +293,13 @@ class Scroller extends Component {
       this._moveId = null;
     }
 
-    let easingX, easingY;
-    easingX = this._getAxisAnimationEasing('x');
-    easingY = this._getAxisAnimationEasing('y');
-    if(easingX || easingY) {
-      let animation = {
-        easingX: easingX,
-        easingY: easingY,
-        cssTransition: this.props.useCssTransition,
+    const easingX = this._getAxisAnimationEasing('x');
+    const easingY = this._getAxisAnimationEasing('y');
+    if (easingX || easingY) {
+      const animation = {
+        easingX,
+        easingY,
+        cssTransition: this.props.useCssTransition
       };
       this._translate.translateAnimation(animation);
       if (this.props.useCssTransition) {
@@ -332,8 +353,8 @@ class Scroller extends Component {
 
   _translateAnimationAxisIndicator(axis, animation) {
     if (this.refs[axis]) {
-      let newAnimation = {};
-      let easingKey = 'easing' + axis.toUpperCase();
+      const newAnimation = {};
+      const easingKey = `easing${axis.toUpperCase()}`;
       if (animation) {
         newAnimation.cssTransition = animation.cssTransition;
         if (animation[easingKey]) {
@@ -350,15 +371,15 @@ class Scroller extends Component {
   }
 
   _stopAnimationAxisIndicator(axis) {
-    if (this.refs[axis])  {
+    if (this.refs[axis]) {
       this.refs[axis].stopAnimation();
     }
   }
 
   scrollTo(x, y) {
     if (this._position.x !== x || this._position.y !== y) {
-      let minPosition = this.getMinPosition();
-      let maxPosition = this.getMaxPosition();
+      const minPosition = this.getMinPosition();
+      const maxPosition = this.getMaxPosition();
       if (x >= minPosition.x && y >= minPosition.y
         && x <= maxPosition.x && y <= maxPosition.y) {
         this._scrollTo(x, y);
@@ -377,7 +398,7 @@ class Scroller extends Component {
   getPosition() {
     return {
       x: this._position.x,
-      y: this._position.y,
+      y: this._position.y
     };
   }
 
@@ -389,11 +410,11 @@ class Scroller extends Component {
           y: 0
         };
       } else {
-        let containerSize = this.getContainerSize();
-        let contentSize = this.getContentSize();
+        const containerSize = this.getContainerSize();
+        const contentSize = this.getContentSize();
         this._maxPosition = {
           x: contentSize.x - containerSize.x,
-          y: contentSize.y - containerSize.y,
+          y: contentSize.y - containerSize.y
         };
       }
     }
@@ -403,11 +424,11 @@ class Scroller extends Component {
   getMinPosition() {
     if (!this._minPosition) {
       if (this.props.rtl) {
-        let containerSize = this.getContainerSize();
-        let contentSize = this.getContentSize();
+        const containerSize = this.getContainerSize();
+        const contentSize = this.getContentSize();
         this._minPosition = {
           x: -(contentSize.x - containerSize.x),
-          y: -(contentSize.y - containerSize.y),
+          y: -(contentSize.y - containerSize.y)
         };
       } else {
         this._minPosition = {
@@ -420,37 +441,37 @@ class Scroller extends Component {
   }
 
   _getAxisAnimationEasing(axis) {
-    if(!this._axisEnabledFlag[axis])  return;
+    if (!this._axisEnabledFlag[axis]) return null;
 
-    let position = this._position[axis],
-      flickStartPosition = this._flickStartPosition[axis],
-      flickStartTime = this._flickStartTime[axis],
-      containerSize = this.getContainerSize()[axis],
-      maxPosition = this._maxPosition[axis],
-      minPosition = this._minPosition[axis];
+    const position = this._position[axis];
+    const flickStartPosition = this._flickStartPosition[axis];
+    const flickStartTime = this._flickStartTime[axis];
+    const containerSize = this.getContainerSize()[axis];
+    const maxPosition = this._maxPosition[axis];
+    const minPosition = this._minPosition[axis];
 
     let bounceValue = null;
-    if(position < minPosition) {
+    if (position < minPosition) {
       bounceValue = minPosition;
-    } else if(position > maxPosition) {
+    } else if (position > maxPosition) {
       bounceValue = maxPosition;
     }
 
-    let now = Date.now();
-    if(bounceValue != null) {
-      let bounceEasing = this._getBounceEasing()[axis];
+    const now = Date.now();
+    if (bounceValue != null) {
+      const bounceEasing = this._getBounceEasing()[axis];
       bounceEasing.reset();
       bounceEasing.setOptions({
         startValue: -position,
         startTime: now,
-        endValue: -bounceValue,
+        endValue: -bounceValue
       });
       return bounceEasing;
     }
 
-    let velocity = (position - flickStartPosition) / (now - flickStartTime);
-    if(Math.abs(velocity) >= this.props.momentumVelocity) {
-      let momentumEasing = this._getMomentumEasing()[axis];
+    const velocity = (position - flickStartPosition) / (now - flickStartTime);
+    if (Math.abs(velocity) >= this.props.momentumVelocity) {
+      const momentumEasing = this._getMomentumEasing()[axis];
       momentumEasing.reset();
       momentumEasing.setOptions({
         startValue: -position,
@@ -463,22 +484,24 @@ class Scroller extends Component {
         position: -position,
         maxPosition: -maxPosition,
         wrapperSize: this.props.bounce ? containerSize : 0,
-        bounce: this.props.bounce,
+        bounce: this.props.bounce
       });
       return momentumEasing;
     }
+
+    return null;
   }
 
   _getBounceEasing() {
     if (!this._bounceEasing) {
-      let duration = this.props.bounceTime;
+      const duration = this.props.bounceTime;
       this._bounceEasing = {
         x: new Circular({
-          duration: duration,
+          duration
         }),
         y: new Circular({
-          duration: duration,
-        }),
+          duration
+        })
       };
     }
     return this._bounceEasing;
@@ -488,7 +511,7 @@ class Scroller extends Component {
     if (!this._momentumEasing) {
       this._momentumEasing = {
         x: new Quadratic(),
-        y: new Quadratic(),
+        y: new Quadratic()
       };
     }
     return this._momentumEasing;
@@ -499,13 +522,12 @@ class Scroller extends Component {
       evt.preventDefault();
     }
 
-    let deltaX = evt.deltaX;
-    let deltaY = evt.deltaY;
+    const { deltaX, deltaY } = evt;
 
     // 是否需要lock住
     if (this.props.lock) {
-      var absDeltaX = Math.abs(deltaX);
-      var absDeltaY = Math.abs(deltaY);
+      const absDeltaX = Math.abs(deltaX);
+      const absDeltaY = Math.abs(deltaY);
       if ((this.props.direction === 'h' && absDeltaX > absDeltaY)
           || (this.props.direction === 'v' && absDeltaY > absDeltaX)) {
         evt.preventDefault();
@@ -559,11 +581,11 @@ class Scroller extends Component {
   _onAxisWheel(axis, delta, movePosition) {
     if (!this._axisEnabledFlag[axis]) return;
 
-    let velocity = 1;
-    delta = velocity * delta;
+    const velocity = 1;
+    delta *= velocity;
     let newPosition = this._position[axis] + delta;
-    let maxPosition = this._maxPosition[axis];
-    let minPosition = this._minPosition[axis];
+    const maxPosition = this._maxPosition[axis];
+    const minPosition = this._minPosition[axis];
     if (newPosition > maxPosition) {
       newPosition = maxPosition;
     } else if (newPosition < minPosition) {
@@ -574,19 +596,19 @@ class Scroller extends Component {
   }
 
   _backToBoundary(animate) {
-    let boundaryArgsX = this._getAxisBoundaryArgs('x', animate);
-    let boundaryArgsY = this._getAxisBoundaryArgs('y', animate);
+    const boundaryArgsX = this._getAxisBoundaryArgs('x', animate);
+    const boundaryArgsY = this._getAxisBoundaryArgs('y', animate);
     if ((boundaryArgsX && boundaryArgsX.needMove)
         || (boundaryArgsY && boundaryArgsY.needMove)) {
       if (animate) {
         this._translate.translateAnimation({
           easingX: boundaryArgsX && boundaryArgsX.easing,
           easingY: boundaryArgsY && boundaryArgsY.easing,
-          cssTransition: this.props.useCssTransition,
+          cssTransition: this.props.useCssTransition
         });
       } else {
-        let x = (boundaryArgsX && -boundaryArgsX.bounceValue) || 0;
-        let y = (boundaryArgsY && -boundaryArgsY.bounceValue) || 0;
+        const x = (boundaryArgsX && -boundaryArgsX.bounceValue) || 0;
+        const y = (boundaryArgsY && -boundaryArgsY.bounceValue) || 0;
         this._translate.translate(x, y);
         this._position.x = -x;
         this._position.y = -y;
@@ -596,16 +618,16 @@ class Scroller extends Component {
   }
 
   _getAxisBoundaryArgs(axis, animate) {
-    if (!this._axisEnabledFlag[axis]) return;
-    let maxPosition, minPosition, position, needMove, bounceValue;
-    maxPosition = this.getMaxPosition()[axis];
-    minPosition = this.getMinPosition()[axis];
-    position = this._position[axis];
-    needMove = false;
+    if (!this._axisEnabledFlag[axis]) return null;
+    let bounceValue;
+    const maxPosition = this.getMaxPosition()[axis];
+    const minPosition = this.getMinPosition()[axis];
+    const position = this._position[axis];
+    let needMove = false;
     if (position < minPosition) {
       needMove = true;
       bounceValue = minPosition;
-    } else if(position > maxPosition) {
+    } else if (position > maxPosition) {
       needMove = true;
       bounceValue = maxPosition;
     }
@@ -617,14 +639,14 @@ class Scroller extends Component {
       bounceEasing.setOptions({
         startValue: -position,
         startTime: Date.now(),
-        endValue: -bounceValue,
+        endValue: -bounceValue
       });
     }
 
     return {
-      needMove: needMove,
+      needMove,
       easing: bounceEasing,
-      bounceValue: bounceValue,
+      bounceValue
     };
   }
 
@@ -638,7 +660,7 @@ class Scroller extends Component {
   }
 
   getContainerSize() {
-    if(!this._containerSize) {
+    if (!this._containerSize) {
       this._containerSize = {
         x: this._wrapperEl.clientWidth,
         y: this._wrapperEl.clientHeight
@@ -648,7 +670,7 @@ class Scroller extends Component {
   }
 
   getContentSize() {
-    if(!this._contentSize) {
+    if (!this._contentSize) {
       this._contentSize = {
         x: this._contentEl.offsetWidth,
         y: this._contentEl.offsetHeight
@@ -658,14 +680,14 @@ class Scroller extends Component {
   }
 
   _refreshAxisEnabled() {
-    let direction = this.props.direction;
-    if(direction === 'b') {
+    const { direction } = this.props;
+    if (direction === 'b') {
       this._axisEnabledFlag.x = true;
       this._axisEnabledFlag.y = true;
-    } else if(direction === 'v') {
+    } else if (direction === 'v') {
       this._axisEnabledFlag.x = false;
       this._axisEnabledFlag.y = true;
-    } else if(direction === 'h') {
+    } else if (direction === 'h') {
       this._axisEnabledFlag.x = true;
       this._axisEnabledFlag.y = false;
     } else {
@@ -683,28 +705,8 @@ class Scroller extends Component {
   _onEasingEnd(position) {
     this._position.x = -position.x;
     this._position.y = -position.y;
-    this._backToBoundary(this.props.useCssTransition ? true : false);
+    this._backToBoundary(!!this.props.useCssTransition);
     this.trigger('scrollEnd', this);
-  }
-
-  componentDidMount() {
-    this._wrapperEl = ReactDOM.findDOMNode(this);
-    this._contentEl = this._wrapperEl.children[0];
-    this._translate = new Translate(this._contentEl);
-    this._translate.on('easing', this._onEasing.bind(this));
-    this._translate.on('easingEnd', this._onEasingEnd.bind(this));
-    this._refreshPosition();
-    this._refreshAxisEnabled();
-
-    // 性能考虑，先给元素添加transform属性，把渲染层先拆分出来，这样第一次滚动效果更好
-    // 另外，如果暴露position属性给调用组件使用，这里可以作为position的初始化
-    // eg: this.scrollTo(this.props.position.x, this.props.position.y);
-    this.scrollTo(0, 0);
-  }
-
-  componentDidUpdate() {
-    this._refreshPosition();
-    this._refreshAxisEnabled();
   }
 
   _stopAnimation() {
@@ -733,17 +735,16 @@ class Scroller extends Component {
   }
 
   _renderIndicators() {
-    let direction = this.props.direction;
-    let showIndicator = this.props.showIndicator;
+    const { direction, showIndicator } = this.props;
     if (showIndicator) {
       if (DIRECTION.V === direction || DIRECTION.V.toLowerCase() === direction) {
         return <Indicator direction={DIRECTION.V} scroller={this}
           indicatorStyle={this.props.indicatorStyle}
-          ref='y' />
+          ref='y' />;
       } else if (DIRECTION.H === direction || DIRECTION.H.toLowerCase() === direction) {
         return <Indicator direction={DIRECTION.H} scroller={this}
           indicatorStyle={this.props.indicatorStyle}
-          ref='x' />
+          ref='x' />;
       } else if (DIRECTION.B === direction || DIRECTION.B.toLowerCase() === direction) {
         return (
           <div>
@@ -757,17 +758,19 @@ class Scroller extends Component {
           </div>
         );
       }
-    } else {
-      return null;
     }
+    return null;
   }
 
   render() {
-    let style = objectAssign({}, styles.container, this.props.style);
+    const containerStyle = objectAssign({}, styles.container, this.props.style);
 
-    let indicators = this._renderIndicators();
-    return(
-      <div style={style}
+    const indicators = this._renderIndicators();
+    const scrollerContent = React.Children.only(this.props.children);
+    return (
+      <div className="scroller-wrapper"
+        style={containerStyle}
+        ref={(node) => { this._wrapperEl = node; }}
         onTouchStart={this._onTouchStart.bind(this)}
         onMouseDown={this._onTouchStart.bind(this)}
         onTouchMove={this._onTouchMove.bind(this)}
@@ -776,7 +779,7 @@ class Scroller extends Component {
         onMouseUp={this._onTouchEnd.bind(this)}
         onTouchCancel={this._onTouchEnd.bind(this)}
         onWheel={this._onWheel.bind(this)}>
-        {this.props.children}
+        {scrollerContent}
         {indicators}
         <Resize onShrink={this._resize.bind(this)}
           onExpand={this._resize.bind(this)} />
@@ -784,12 +787,5 @@ class Scroller extends Component {
     );
   }
 }
-
-let styles = {
-  container: {
-    overflow: 'hidden',
-    position: 'relative',
-  }
-};
 
 export default Scroller;
